@@ -1,0 +1,25 @@
+{
+  "name": "@underactive/pi-inceptionlabs-provider",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Inception Mercury 3 provider for Pi, with in-transcript diffusion playback",
+  "author": "Eric Sison",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/underactive/pi-inceptionlabs-provider.git"
+  },
+  "homepage": "https://github.com/underactive/pi-inceptionlabs-provider#readme",
+  "bugs": {
+    "url": "https://github.com/underactive/pi-inceptionlabs-provider/issues"
+  },
+  "keywords": ["pi-package", "pi", "pi-extension", "provider", "inception", "mercury", "diffusion", "llm"],
+  "pi": { "extensions": ["./index.js"] },
+  "files": ["index.js", "diffusion.js", "README.md", "LICENSE", "CHANGELOG.md", "assets"],
+  "publishConfig": { "access": "public" },
+  "engines": { "node": ">=22.19" },
+  "scripts": { "test": "node --test test/*.test.js" },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*"
+  }
+}
