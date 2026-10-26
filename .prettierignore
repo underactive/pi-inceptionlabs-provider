@@ -1,0 +1,6 @@
+# Prettier also skips everything in .gitignore.
+# npm re-serializes these files itself, so keep npm's layout.
+package.json
+package-lock.json
+# Local Pi agent state.
+.pi/

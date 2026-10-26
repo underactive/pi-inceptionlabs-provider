@@ -1,6 +1,6 @@
 {
   "name": "@underactive/pi-inceptionlabs-provider",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Inception Mercury 3 provider for Pi, with in-transcript diffusion playback",
   "author": "Eric Sison",
@@ -18,9 +18,23 @@
   "files": ["index.js", "diffusion.js", "README.md", "LICENSE", "CHANGELOG.md"],
   "publishConfig": { "access": "public" },
   "engines": { "node": ">=22.19" },
-  "scripts": { "test": "node --test test/*.test.js" },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=test/** test/*.test.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check"
+  },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^1.4.0"
+    "@earendil-works/pi-ai": "^1.4.0",
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^22.19.0",
+    "eslint": "^10.0.0",
+    "globals": "^16.0.0",
+    "prettier": "3.9.10",
+    "typescript": "^5.9.3"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=1.4.0"

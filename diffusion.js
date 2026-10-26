@@ -1,6 +1,17 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/compat";
 
+/** @import { Api, AssistantMessage, Model, SimpleStreamOptions, StreamFunction } from "@earendil-works/pi-ai/compat" */
+
+/**
+ * A parsed Inception stream event. Only the fields diffusion reads are typed; the rest pass through.
+ * @typedef {{ choices?: { delta?: { content?: string | null }, finish_reason?: string | null }[] }} InceptionChunk
+ */
+/**
+ * Reads a pacing limit in milliseconds when a response starts; 0 disables pacing.
+ * @typedef {() => number} PacingMs
+ */
+
 // Default total artificial delay per response, so long bursts never stall the agent.
 export const DEFAULT_MAX_HOLD_MS = 2000;
 
@@ -8,6 +19,12 @@ export const DEFAULT_MAX_HOLD_MS = 2000;
 // Tool, reasoning and usage data pass through untouched; the final frame becomes the
 // single text delta the transport commits. Inception repeats finish_reason in a trailing
 // empty chunk, so only the first finish commits text.
+/**
+ * @param {ReadableStream<Uint8Array>} body
+ * @param {(text: string) => Promise<void>} onFrame
+ * @param {(event: InceptionChunk) => unknown} [onEvent]
+ * @returns {ReadableStream<Uint8Array>}
+ */
 export function diffusionBody(body, onFrame, onEvent) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -15,18 +32,25 @@ export function diffusionBody(body, onFrame, onEvent) {
   let draft;
   let finished = false;
 
+  /**
+   * @param {string} raw
+   * @param {{ enqueue(chunk: Uint8Array): void }} controller
+   */
   async function frame(raw, controller) {
     // Per the SSE spec, an event's data lines join with "\n", so JSON split between tokens
     // still parses. Inception sends each JSON event on one line; a raw newline inside a JSON
     // string is invalid JSON and errors the stream instead of committing partial text.
-    const data = raw.split(/\r?\n/)
+    const data = raw
+      .split(/\r?\n/)
       .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trimStart()).join("\n");
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
     if (!data) return;
     if (data === "[DONE]") {
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       return;
     }
+    /** @type {InceptionChunk} */
     const event = JSON.parse(data);
     await onEvent?.(event);
     const choice = event.choices?.[0];
@@ -37,31 +61,40 @@ export function diffusionBody(body, onFrame, onEvent) {
     }
     const commit = Boolean(choice?.finish_reason) && !finished && draft !== undefined;
     if (choice?.finish_reason) finished = true;
-    const forwarded = isFrame || commit
-      ? { ...event, choices: [{ ...choice, delta: { ...choice.delta, content: commit ? draft : null } }] }
-      : event;
+    const forwarded =
+      isFrame || commit
+        ? { ...event, choices: [{ ...choice, delta: { ...choice.delta, content: commit ? draft : null } }] }
+        : event;
     controller.enqueue(encoder.encode(`data: ${JSON.stringify(forwarded)}\n\n`));
   }
 
-  return body.pipeThrough(new TransformStream({
-    async transform(chunk, controller) {
-      buffer += decoder.decode(chunk, { stream: true });
-      let match;
-      while ((match = /\r?\n\r?\n/.exec(buffer))) {
-        const raw = buffer.slice(0, match.index);
-        buffer = buffer.slice(match.index + match[0].length);
-        await frame(raw, controller);
-      }
-    },
-    async flush(controller) {
-      buffer += decoder.decode();
-      if (buffer.trim()) await frame(buffer, controller);
-    },
-  }));
+  return body.pipeThrough(
+    new TransformStream({
+      async transform(chunk, controller) {
+        buffer += decoder.decode(chunk, { stream: true });
+        let match;
+        while ((match = /\r?\n\r?\n/.exec(buffer))) {
+          const raw = buffer.slice(0, match.index);
+          buffer = buffer.slice(match.index + match[0].length);
+          await frame(raw, controller);
+        }
+      },
+      async flush(controller) {
+        buffer += decoder.decode();
+        if (buffer.trim()) await frame(buffer, controller);
+      },
+    }),
+  );
 }
 
 // Frames arrive in bursts (several per decoded block), so each one is held on screen for
 // at least frameMs, up to maxHoldMs in total per response. Aborting ends any hold immediately.
+/**
+ * @param {number} frameMs
+ * @param {number} maxHoldMs
+ * @param {AbortSignal} [signal]
+ * @returns {() => Promise<void>}
+ */
 function createPacer(frameMs, maxHoldMs, signal) {
   let shownAt = 0;
   let held = 0;
@@ -77,27 +110,54 @@ function createPacer(frameMs, maxHoldMs, signal) {
 
 // Intermediate frames are untrusted model output shown raw, so strip terminal controls.
 // The committed text stays verbatim, like any other provider's output.
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
 const sanitize = (text) => text.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 
+/**
+ * @param {Model<Api>} model
+ * @param {unknown} error
+ * @returns {AssistantMessage}
+ */
 function errorResult(model, error) {
   return {
-    role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-    stopReason: "error", errorMessage: error instanceof Error ? error.message : String(error), timestamp: Date.now(),
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "error",
+    errorMessage: error instanceof Error ? error.message : String(error),
+    timestamp: Date.now(),
   };
 }
 
+/**
+ * @param {StreamFunction<Api, SimpleStreamOptions>} transport
+ * @param {PacingMs} [getFrameMs]
+ * @param {PacingMs} [getMaxHoldMs]
+ * @returns {StreamFunction<Api, SimpleStreamOptions>}
+ */
 export function createInceptionStream(transport, getFrameMs = () => 0, getMaxHoldMs = () => DEFAULT_MAX_HOLD_MS) {
   return (model, context, options = {}) => {
     const outer = createAssistantMessageEventStream();
     const fetchImpl = options.fetch ?? globalThis.fetch;
     const pace = createPacer(getFrameMs(), getMaxHoldMs(), options.signal);
+    /** @type {AssistantMessage | undefined} */
     let partial;
     const show = async (text) => {
       if (!partial) return;
       await pace();
       // Pi re-renders the streaming message from `partial`, so a replaced text block
       // overwrites the previous frame in place instead of appending to it.
+      /** @type {AssistantMessage["content"]} */
       const content = [...partial.content, { type: "text", text: sanitize(text) }];
       outer.push({ type: "text_delta", contentIndex: content.length - 1, delta: "", partial: { ...partial, content } });
     };
@@ -105,7 +165,7 @@ export function createInceptionStream(transport, getFrameMs = () => 0, getMaxHol
       ...options,
       onProviderStreamEvent: undefined,
       async onPayload(payload, requestModel) {
-        const proposed = { ...payload, diffusing: true };
+        const proposed = { .../** @type {Record<string, unknown>} */ (payload), diffusing: true };
         return (await options.onPayload?.(proposed, requestModel)) ?? proposed;
       },
       async fetch(input, init) {
@@ -123,9 +183,11 @@ export function createInceptionStream(transport, getFrameMs = () => 0, getMaxHol
         if (event.type === "start") partial = event.partial;
         outer.push(event);
       }
-    })().catch((error) => {
-      outer.push({ type: "error", reason: "error", error: errorResult(model, error) });
-    }).finally(() => outer.end());
+    })()
+      .catch((error) => {
+        outer.push({ type: "error", reason: "error", error: errorResult(model, error) });
+      })
+      .finally(() => outer.end());
     return outer;
   };
 }

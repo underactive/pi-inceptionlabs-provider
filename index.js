@@ -5,6 +5,11 @@ import { createInceptionStream, DEFAULT_MAX_HOLD_MS } from "./diffusion.js";
 const DEFAULT_FRAME_MS = 60;
 
 // Read a non-negative integer millisecond value, or use its default.
+/**
+ * @param {string} name
+ * @param {number} fallback
+ * @returns {number}
+ */
 function readMs(name, fallback) {
   const value = Number(process.env[name]);
   return Number.isInteger(value) && value >= 0 ? value : fallback;
@@ -20,18 +25,31 @@ export default function inception(pi) {
     baseUrl: "https://api.inceptionlabs.ai/v1",
     apiKey: "$INCEPTION_API_KEY",
     api: "inception-diffusion",
-    streamSimple: createInceptionStream(openAICompletionsApi().streamSimple, () => frameMs, () => maxHoldMs),
-    models: [{
-      id: "mercury-3",
-      name: "Mercury 3 (Diffusion)",
-      reasoning: true,
-      input: ["text"],
-      contextWindow: 1000000,
-      maxTokens: 131072,
-      cost: { input: 0.1, output: 0.35, cacheRead: 0.01, cacheWrite: 0 },
-      thinkingLevelMap: { off: "instant", minimal: "instant", low: "low", medium: "medium", high: "high", xhigh: "high" },
-      compat: { supportsStore: false, supportsDeveloperRole: false, maxTokensField: "max_completion_tokens" },
-    }],
+    streamSimple: createInceptionStream(
+      openAICompletionsApi().streamSimple,
+      () => frameMs,
+      () => maxHoldMs,
+    ),
+    models: [
+      {
+        id: "mercury-3",
+        name: "Mercury 3 (Diffusion)",
+        reasoning: true,
+        input: ["text"],
+        contextWindow: 1000000,
+        maxTokens: 131072,
+        cost: { input: 0.1, output: 0.35, cacheRead: 0.01, cacheWrite: 0 },
+        thinkingLevelMap: {
+          off: "instant",
+          minimal: "instant",
+          low: "low",
+          medium: "medium",
+          high: "high",
+          xhigh: "high",
+        },
+        compat: { supportsStore: false, supportsDeveloperRole: false, maxTokensField: "max_completion_tokens" },
+      },
+    ],
   });
   pi.on("session_start", async (_event, ctx) => {
     // Nobody watches frames in print or JSON mode, so do not hold the response there.

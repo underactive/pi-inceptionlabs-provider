@@ -6,7 +6,7 @@ growing token by token.
 
 ![Mercury 3 resolving a response out of noise](https://raw.githubusercontent.com/underactive/pi-inceptionlabs-provider/main/assets/mercury_diffusion_llm.gif)
 
-*Slowed down ~5x to show the denoising effect.*
+_Slowed down ~5x to show the denoising effect._
 
 Requires Pi 1.4.0 or newer and Node 22.19+.
 
@@ -62,11 +62,11 @@ pi --model inception/mercury-3
 
 ## Configuration
 
-| Variable | Default | Effect |
-|---|---|---|
-| `INCEPTION_API_KEY` | none | API key, if not set with `/login inception` |
-| `INCEPTION_DIFFUSION_FRAME_MS` | `60` | Minimum time each diffusion frame stays on screen; `0` disables pacing |
-| `INCEPTION_DIFFUSION_MAX_HOLD_MS` | `2000` | Total time frames may be held per response before they show at network speed; `0` disables holds |
+| Variable                          | Default | Effect                                                                                           |
+| --------------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
+| `INCEPTION_API_KEY`               | none    | API key, if not set with `/login inception`                                                      |
+| `INCEPTION_DIFFUSION_FRAME_MS`    | `60`    | Minimum time each diffusion frame stays on screen; `0` disables pacing                           |
+| `INCEPTION_DIFFUSION_MAX_HOLD_MS` | `2000`  | Total time frames may be held per response before they show at network speed; `0` disables holds |
 
 ## Update and remove
 
@@ -113,11 +113,18 @@ pi -e /absolute/path/to/pi-inceptionlabs-provider/index.js
 
 Inside Pi the extension needs no installed dependencies: it imports only module
 specifiers Pi resolves for extensions. For local tests, install the development
-dependency and run:
+dependencies and run:
 
 ```sh
 npm install
 npm test
+```
+
+```sh
+nvm use                # Node 22.19, the minimum supported version
+npm run check          # tsc --noEmit on the JSDoc types, ESLint, Prettier check
+npm run format         # apply Prettier
+npm run test:coverage  # tests with Node's built-in coverage report
 ```
 
 If this checkout has a `node_modules` symlink to a Pi installation, remove only
@@ -125,11 +132,12 @@ the symlink before installing with `rm node_modules` (do not add `-r` or a
 trailing slash).
 
 Tests use mocked HTTP streams: byte-split Unicode and SSE framing, coalesced
-events, keep-alive comments, multi-line `data:` fields, frame replacement,
-repeated and content-less finish chunks, empty output, raw event instrumentation,
-tool calls, usage, malformed and truncated streams, HTTP errors, configurable
-pacing holds, missing-key warnings, aborts, and control-character stripping. No
-API credentials are required.
+events, unterminated final events, keep-alive comments, multi-line `data:` fields,
+frame replacement, repeated and content-less finish chunks, empty output, raw
+event instrumentation, tool calls, usage, malformed and truncated streams,
+bodyless HTTP responses, default global fetch, requests aborted before they start,
+failing transports, configurable pacing holds, missing-key warnings, and
+control-character stripping. No API credentials are required.
 
 ## Sources
 

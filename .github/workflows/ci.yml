@@ -23,3 +23,15 @@ jobs:
           node-version: ${{ matrix.node }}
       - run: npm install --no-audit --no-fund
       - run: npm test
+
+  static:
+    runs-on: ubuntu-latest
+    name: Typecheck, lint, format and coverage
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - run: npm run test:coverage
