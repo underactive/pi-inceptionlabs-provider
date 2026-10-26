@@ -1,8 +1,8 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai/compat";
 
-// Total artificial delay allowed per response, so long bursts never stall the agent.
-const MAX_HOLD_MS = 2000;
+// Default total artificial delay per response, so long bursts never stall the agent.
+export const DEFAULT_MAX_HOLD_MS = 2000;
 
 // Each Inception frame is the complete text so far, with undecoded regions still noisy.
 // Tool, reasoning and usage data pass through untouched; the final frame becomes the
@@ -16,6 +16,9 @@ export function diffusionBody(body, onFrame, onEvent) {
   let finished = false;
 
   async function frame(raw, controller) {
+    // Per the SSE spec, an event's data lines join with "\n", so JSON split between tokens
+    // still parses. Inception sends each JSON event on one line; a raw newline inside a JSON
+    // string is invalid JSON and errors the stream instead of committing partial text.
     const data = raw.split(/\r?\n/)
       .filter((line) => line.startsWith("data:"))
       .map((line) => line.slice(5).trimStart()).join("\n");
@@ -58,12 +61,12 @@ export function diffusionBody(body, onFrame, onEvent) {
 }
 
 // Frames arrive in bursts (several per decoded block), so each one is held on screen for
-// at least frameMs. Aborting the request ends any hold immediately.
-function createPacer(frameMs, signal) {
+// at least frameMs, up to maxHoldMs in total per response. Aborting ends any hold immediately.
+function createPacer(frameMs, maxHoldMs, signal) {
   let shownAt = 0;
   let held = 0;
   return async () => {
-    const wait = Math.min(frameMs - (Date.now() - shownAt), MAX_HOLD_MS - held);
+    const wait = Math.min(frameMs - (Date.now() - shownAt), maxHoldMs - held);
     if (wait > 0 && !signal?.aborted) {
       held += wait;
       await sleep(wait, undefined, { signal }).catch(() => {});
@@ -84,11 +87,11 @@ function errorResult(model, error) {
   };
 }
 
-export function createInceptionStream(transport, getFrameMs = () => 0) {
+export function createInceptionStream(transport, getFrameMs = () => 0, getMaxHoldMs = () => DEFAULT_MAX_HOLD_MS) {
   return (model, context, options = {}) => {
     const outer = createAssistantMessageEventStream();
     const fetchImpl = options.fetch ?? globalThis.fetch;
-    const pace = createPacer(getFrameMs(), options.signal);
+    const pace = createPacer(getFrameMs(), getMaxHoldMs(), options.signal);
     let partial;
     const show = async (text) => {
       if (!partial) return;

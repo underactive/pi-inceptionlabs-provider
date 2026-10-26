@@ -49,6 +49,9 @@ Or set it in your environment before starting Pi:
 export INCEPTION_API_KEY="your-key"
 ```
 
+If an interactive session starts with Mercury 3 selected and no key, the extension
+shows a warning pointing to `/login inception`.
+
 ### 4. Select the model
 
 Pick **Mercury 3 (Diffusion)** with `/model`, or start with it directly:
@@ -63,6 +66,7 @@ pi --model inception/mercury-3
 |---|---|---|
 | `INCEPTION_API_KEY` | none | API key, if not set with `/login inception` |
 | `INCEPTION_DIFFUSION_FRAME_MS` | `60` | Minimum time each diffusion frame stays on screen; `0` disables pacing |
+| `INCEPTION_DIFFUSION_MAX_HOLD_MS` | `2000` | Total time frames may be held per response before they show at network speed; `0` disables holds |
 
 ## Update and remove
 
@@ -83,7 +87,7 @@ Inception emits frames in bursts: several frames per decoded block arrive in the
 same millisecond, and short answers arrive all at once. Rendered at network speed
 the noisy frames would be invisible, so each frame is held on screen for at least
 60 ms. Set `INCEPTION_DIFFUSION_FRAME_MS` to change the hold (0 disables it).
-Holds total at most 2 s per response, after which frames show at network speed.
+Holds total at most 2 s per response by default (`INCEPTION_DIFFUSION_MAX_HOLD_MS`), after which frames show at network speed.
 Pacing is skipped in print and JSON mode, where nothing is rendered.
 
 Only the final frame is committed: intermediate frames never enter the session
@@ -108,18 +112,24 @@ pi -e /absolute/path/to/pi-inceptionlabs-provider/index.js
 ```
 
 Inside Pi the extension needs no installed dependencies: it imports only module
-specifiers Pi resolves for extensions. The tests run outside Pi, so
-`@earendil-works/pi-ai` must be resolvable locally (install it, or link your Pi
-installation's node_modules for development), then run:
+specifiers Pi resolves for extensions. For local tests, install the development
+dependency and run:
 
 ```sh
+npm install
 npm test
 ```
 
-Tests use mocked HTTP streams: byte-split Unicode and SSE framing, frame
-replacement, repeated and content-less finish chunks, empty output, raw event
-instrumentation, tool calls, usage, malformed and truncated streams, HTTP errors,
-pacing, aborts, and control-character stripping. No API credentials are required.
+If this checkout has a `node_modules` symlink to a Pi installation, remove only
+the symlink before installing with `rm node_modules` (do not add `-r` or a
+trailing slash).
+
+Tests use mocked HTTP streams: byte-split Unicode and SSE framing, coalesced
+events, keep-alive comments, multi-line `data:` fields, frame replacement,
+repeated and content-less finish chunks, empty output, raw event instrumentation,
+tool calls, usage, malformed and truncated streams, HTTP errors, configurable
+pacing holds, missing-key warnings, aborts, and control-character stripping. No
+API credentials are required.
 
 ## Sources
 

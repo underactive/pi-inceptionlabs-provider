@@ -31,6 +31,13 @@ function body(text) {
     controller.close();
   } });
 }
+// The whole response in one read, so several events share a chunk.
+const whole = (text) => new ReadableStream({ start(controller) {
+  setTimeout(() => {
+    controller.enqueue(new TextEncoder().encode(text));
+    controller.close();
+  }, 0);
+} });
 async function run(stream, events, extra = {}) {
   const started = performance.now();
   const s = stream(model, context, {
@@ -146,4 +153,87 @@ test("registers Pi's built-in API-key login and pauses pacing outside interactiv
   } finally {
     delete process.env.INCEPTION_DIFFUSION_FRAME_MS;
   }
+});
+
+test("several SSE events in one read, with keep-alive comments, parse individually", async () => {
+  const events = [chunk("noisy"), chunk("Hello 世界"), chunk("Hello 🌍", "stop"), finish, usage];
+  const crlf = ": keep-alive\n\n" + encode(events);
+  for (const sse of [crlf, crlf.replaceAll("\r\n", "\n")]) {
+    const raw = [];
+    const { emitted, result } = await run(createInceptionStream(streamSimple), events, {
+      onProviderStreamEvent(value) { raw.push(value); },
+      fetch: async () => new Response(whole(sse)),
+    });
+    assert.equal(result.stopReason, "stop", result.errorMessage);
+    assert.deepEqual(frames(emitted), ["noisy", "Hello 世界", "Hello 🌍"]);
+    assert.deepEqual(committed(emitted), ["Hello 🌍"]);
+    assert.deepEqual(raw, events);
+    assert.equal(result.usage.totalTokens, 110);
+  }
+});
+
+test("SSE data lines join across JSON tokens but raw newlines inside strings error", async () => {
+  const valid = 'data: {"choices":[{"index":0,\ndata: "delta":{"content":"ab"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
+  const parsed = await run(createInceptionStream(streamSimple), valid);
+  assert.equal(parsed.result.stopReason, "stop", parsed.result.errorMessage);
+  assert.deepEqual(frames(parsed.emitted), ["ab"]);
+  assert.deepEqual(text(parsed.result), ["ab"]);
+
+  const invalid = 'data: {"choices":[{"index":0,"delta":{"content":"a\ndata: b"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
+  const failed = await run(createInceptionStream(streamSimple), invalid);
+  assert.equal(failed.result.stopReason, "error");
+  assert.deepEqual(text(failed.result), []);
+});
+
+test("the total hold per response is capped and configurable", async () => {
+  const events = [chunk("a"), chunk("ab"), chunk("abc"), chunk("abcd", "stop")];
+  const capped = await run(createInceptionStream(streamSimple, () => 200, () => 150), events);
+  assert.ok(capped.elapsed >= 140 && capped.elapsed < 400, `capped run took ${capped.elapsed}ms`);
+  assert.deepEqual(text(capped.result), ["abcd"]);
+
+  const disabled = await run(createInceptionStream(streamSimple, () => 1000, () => 0), events);
+  assert.ok(disabled.elapsed < 200, `uncapped run took ${disabled.elapsed}ms`);
+});
+
+test("INCEPTION_DIFFUSION_MAX_HOLD_MS is read at session start and invalid values fall back", async () => {
+  process.env.INCEPTION_DIFFUSION_FRAME_MS = "100";
+  process.env.INCEPTION_DIFFUSION_MAX_HOLD_MS = "120";
+  try {
+    const registration = load();
+    const events = [chunk("a"), chunk("ab"), chunk("abc"), chunk("abcd", "stop")];
+    await registration.handlers.session_start({ type: "session_start" }, { hasUI: true });
+    const capped = await run(registration.config.streamSimple, events);
+    assert.ok(capped.elapsed >= 110 && capped.elapsed < 250, `configured cap took ${capped.elapsed}ms`);
+
+    process.env.INCEPTION_DIFFUSION_MAX_HOLD_MS = "nope";
+    await registration.handlers.session_start({ type: "session_start" }, { hasUI: true });
+    const fallback = await run(registration.config.streamSimple, events);
+    assert.ok(fallback.elapsed >= 290, `default cap run took ${fallback.elapsed}ms`);
+  } finally {
+    delete process.env.INCEPTION_DIFFUSION_FRAME_MS;
+    delete process.env.INCEPTION_DIFFUSION_MAX_HOLD_MS;
+  }
+});
+
+test("warns at interactive session start when Mercury 3 has no API key", async () => {
+  const registration = load();
+  const notes = [];
+  const lookups = [];
+  const sessionContext = (provider, hasUI = true, key) => ({
+    hasUI,
+    model: { provider, id: "mercury-3" },
+    modelRegistry: { async getApiKeyForProvider(id) { lookups.push(id); return key; } },
+    ui: { notify(message, type) { notes.push({ message, type }); } },
+  });
+
+  await registration.handlers.session_start({ type: "session_start" }, sessionContext("inception"));
+  await registration.handlers.session_start({ type: "session_start" }, sessionContext("inception", true, "configured-key"));
+  await registration.handlers.session_start({ type: "session_start" }, sessionContext("openai"));
+  await registration.handlers.session_start({ type: "session_start" }, sessionContext("inception", false));
+
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].type, "warning");
+  assert.match(notes[0].message, /\/login inception/);
+  assert.match(notes[0].message, /INCEPTION_API_KEY/);
+  assert.deepEqual(lookups, ["inception", "inception"]);
 });

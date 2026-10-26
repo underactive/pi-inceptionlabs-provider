@@ -15,11 +15,14 @@
   },
   "keywords": ["pi-package", "pi", "pi-extension", "provider", "inception", "mercury", "diffusion", "llm"],
   "pi": { "extensions": ["./index.js"] },
-  "files": ["index.js", "diffusion.js", "README.md", "LICENSE", "CHANGELOG.md", "assets"],
+  "files": ["index.js", "diffusion.js", "README.md", "LICENSE", "CHANGELOG.md"],
   "publishConfig": { "access": "public" },
   "engines": { "node": ">=22.19" },
   "scripts": { "test": "node --test test/*.test.js" },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^1.4.0"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "*"
+    "@earendil-works/pi-ai": ">=1.4.0"
   }
 }
